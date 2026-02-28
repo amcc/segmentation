@@ -1,5 +1,5 @@
 let bodySegmentation;
-let segmentation;
+let segmentationResult;
 
 let capture;
 let captureEvent;
@@ -7,12 +7,13 @@ let camWidth = 0;
 let camHeight = 0;
 let loadedCamera;
 let isFrontCamera = true;
-let segmentationInput;
+let cameraFrameBuffer;
 let maskedOutput;
+const CANVAS_FIT_MODE = "contain"; // "contain" = no crop, "cover" = fill + crop
 
 function preload() {
+  // 🧠 Load segmentation model before setup starts
   bodySegmentation = ml5.bodySegmentation("SelfieSegmentation");
-  // or "BodyPix" for body part masks
 }
 
 function setup() {
@@ -22,54 +23,98 @@ function setup() {
 }
 
 function windowResized() {
-  // Canvas stays at camera size; CSS scales it to fill the window.
-  // No-op here unless we want to recapture.
+  resizeCanvas(windowWidth, windowHeight);
+}
+
+function getFittedRect(srcW, srcH, dstW, dstH, mode = "contain") {
+  // 📐 Fit source into destination while preserving aspect ratio
+  const scale =
+    mode === "cover"
+      ? Math.max(dstW / srcW, dstH / srcH)
+      : Math.min(dstW / srcW, dstH / srcH);
+
+  const w = srcW * scale;
+  const h = srcH * scale;
+
+  return {
+    x: (dstW - w) * 0.5,
+    y: (dstH - h) * 0.5,
+    w,
+    h,
+  };
 }
 
 function gotResults(result) {
-  segmentation = result;
+  // 🎯 Latest model output (includes mask canvas)
+  segmentationResult = result;
 }
 
 function draw() {
+  // 🎥 Copy live camera frame into the model input buffer
   background(0);
-  if (segmentationInput && capture) {
-    segmentationInput.clear();
-    segmentationInput.push();
-    segmentationInput.translate(
-      segmentationInput.width / 2,
-      segmentationInput.height / 2,
+  if (cameraFrameBuffer && capture) {
+    cameraFrameBuffer.clear();
+    cameraFrameBuffer.image(
+      capture,
+      0,
+      0,
+      cameraFrameBuffer.width,
+      cameraFrameBuffer.height,
     );
-    // segmentationInput.rotate(HALF_PI);
-    segmentationInput.image(capture, 0, 0, camWidth, camHeight);
-    segmentationInput.pop();
   }
   if (loadedCamera && capture) makeSegmentationImage();
 }
 
 function makeSegmentationImage() {
+  // 🖼️ Compose final frame: camera + segmentation mask
   background(255, 100, 100);
-  if (segmentation && segmentationInput && maskedOutput) {
-    const maskCanvas = segmentation?.mask?.canvas;
+
+  const sourceW = cameraFrameBuffer?.width || camWidth;
+  const sourceH = cameraFrameBuffer?.height || camHeight;
+  if (!sourceW || !sourceH) return;
+
+  const fitted = getFittedRect(
+    sourceW,
+    sourceH,
+    width,
+    height,
+    CANVAS_FIT_MODE,
+  );
+
+  if (segmentationResult && cameraFrameBuffer && maskedOutput) {
+    const maskCanvas = segmentationResult?.mask?.canvas;
     if (!maskCanvas) return;
 
+    // 1) Draw camera frame
     const mctx = maskedOutput.drawingContext;
     maskedOutput.clear();
     mctx.drawImage(
-      segmentationInput.canvas,
+      cameraFrameBuffer.canvas,
       0,
       0,
       maskedOutput.width,
       maskedOutput.height,
     );
+
+    // 2) Keep only pixels where mask exists
     mctx.globalCompositeOperation = "destination-in";
     mctx.drawImage(maskCanvas, 0, 0, maskedOutput.width, maskedOutput.height);
+
+    // 3) Reset blend mode and draw to main canvas
     mctx.globalCompositeOperation = "source-over";
 
-    image(maskedOutput, 0, 0);
+    image(maskedOutput, fitted.x, fitted.y, fitted.w, fitted.h);
+    return;
+  }
+
+  // Fallback: show raw camera frame buffer if mask isn't ready yet
+  if (cameraFrameBuffer) {
+    image(cameraFrameBuffer, fitted.x, fitted.y, fitted.w, fitted.h);
   }
 }
 
 function captureWebcam() {
+  // 📱 Start camera stream (front camera by default)
   isFrontCamera = true;
 
   capture = createCapture(
@@ -81,8 +126,6 @@ function captureWebcam() {
     },
     function (e) {
       captureEvent = e;
-      // do things when video ready
-      // until then, the video element will have no dimensions, or default 640x480
       setCameraDimensions();
     },
   );
@@ -91,13 +134,12 @@ function captureWebcam() {
 }
 
 function setCameraDimensions() {
+  // ✅ Wait for real decoded video size, then allocate matching buffers
   loadedCamera = captureEvent.getTracks()[0].getSettings();
   console.log("cameraDimensions", loadedCamera);
 
-  // Use the actual decoded video dimensions — these always match what's drawn
   const vid = capture.elt;
 
-  // videoWidth/videoHeight may be 0 briefly; poll until they settle
   const waitForVideoSize = setInterval(() => {
     if (vid.videoWidth > 0 && vid.videoHeight > 0) {
       clearInterval(waitForVideoSize);
@@ -105,22 +147,16 @@ function setCameraDimensions() {
       camHeight = vid.videoHeight;
       console.log("actual video size", camWidth, camHeight);
       console.log("capture", capture);
-      // Set the p5 capture size so ml5 uses the correct dimensions when
-      // resizing its input tensor — without this, ml5 gets wrong dimensions
-      // on mobile and produces a misoriented mask.
       capture.size(camWidth, camHeight);
-      // Resize canvas to match camera exactly — transforms and mask alignment
-      // are all relative to the camera's native dimensions, not the window.
-      // CSS in style.css scales the canvas element to fill the window.
-      // resizeCanvas(camWidth, camHeight);
-      segmentationInput = createGraphics(camHeight, camWidth);
-      segmentationInput.pixelDensity(1);
-      segmentationInput.imageMode(CENTER);
-      maskedOutput = createGraphics(camHeight, camWidth);
+
+      // Offscreen buffers: model input + masked output
+      cameraFrameBuffer = createGraphics(camWidth, camHeight);
+      cameraFrameBuffer.pixelDensity(1);
+      maskedOutput = createGraphics(camWidth, camHeight);
       maskedOutput.pixelDensity(1);
-      // Start detection only once actual camera dims are known,
-      // so ml5 never processes the default 640x480 placeholder frames.
-      bodySegmentation.detectStart(segmentationInput.canvas, gotResults);
+
+      // Start segmentation from the same buffer used for rendering
+      bodySegmentation.detectStart(cameraFrameBuffer.canvas, gotResults);
       loadedCamera = true;
     }
   }, 50);
