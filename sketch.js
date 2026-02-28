@@ -33,40 +33,45 @@ function draw() {
 }
 
 function makeSegmentationImage() {
-  // Draw video, mirrored for front camera
-  push();
-  if (isFrontCamera) {
-    translate(width, 0);
-    scale(-1, 1);
+  if (segmentation) {
+    console.log("segmentation", segmentation);
+    image(segmentation.mask, 0, 0, width, height);
   }
-  image(capture, 0, 0, width, height);
-  pop();
 
-  if (!segmentation) return;
+  // Draw video, mirrored for front camera
+  // push();
+  // if (isFrontCamera) {
+  //   translate(width, 0);
+  //   scale(-1, 1);
+  // }
+  // image(capture, 0, 0, width, height);
+  // pop();
 
-  const maskSrc = segmentation.mask.canvas;
-  if (!maskSrc) return;
+  // if (!segmentation) return;
 
-  const isPortrait = height > width;
+  // const maskSrc = segmentation.mask.canvas;
+  // if (!maskSrc) return;
 
-  const offscreen = document.createElement("canvas");
-  offscreen.width = width;
-  offscreen.height = height;
-  const octx = offscreen.getContext("2d");
+  // const isPortrait = height > width;
 
-  const mw = maskSrc.width;
-  const mh = maskSrc.height;
+  // const offscreen = document.createElement("canvas");
+  // offscreen.width = width;
+  // offscreen.height = height;
+  // const octx = offscreen.getContext("2d");
+
+  // const mw = maskSrc.width;
+  // const mh = maskSrc.height;
 
   // Mirror the mask horizontally to match the mirrored video feed.
   // No rotation needed — ml5 SelfieSegmentation outputs the mask
   // correctly oriented when capture.size() matches the camera dimensions.
-  octx.translate(width / 2, height / 2);
-  octx.scale(-1, 1);
-  octx.drawImage(maskSrc, -mw / 2, -mh / 2, mw, mh);
+  // octx.translate(width / 2, height / 2);
+  // octx.scale(-1, 1);
+  // octx.drawImage(maskSrc, -mw / 2, -mh / 2, mw, mh);
 
-  drawingContext.globalCompositeOperation = "destination-in";
-  drawingContext.drawImage(offscreen, 0, 0);
-  drawingContext.globalCompositeOperation = "source-over";
+  // drawingContext.globalCompositeOperation = "destination-in";
+  // drawingContext.drawImage(offscreen, 0, 0);
+  // drawingContext.globalCompositeOperation = "source-over";
 
   // let newImg = createImage(width, height);
 
