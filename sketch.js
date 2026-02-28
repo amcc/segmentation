@@ -7,6 +7,8 @@ let camWidth = 0;
 let camHeight = 0;
 let loadedCamera;
 let isFrontCamera = true;
+let segmentationInput;
+let maskedOutput;
 
 function preload() {
   bodySegmentation = ml5.bodySegmentation("SelfieSegmentation");
@@ -14,6 +16,7 @@ function preload() {
 }
 
 function setup() {
+  pixelDensity(1);
   createCanvas(windowWidth, windowHeight);
   captureWebcam();
 }
@@ -29,60 +32,41 @@ function gotResults(result) {
 
 function draw() {
   background(0);
+  if (segmentationInput && capture) {
+    segmentationInput.clear();
+    segmentationInput.push();
+    segmentationInput.translate(
+      segmentationInput.width / 2,
+      segmentationInput.height / 2,
+    );
+    // segmentationInput.rotate(HALF_PI);
+    segmentationInput.image(capture, 0, 0, camWidth, camHeight);
+    segmentationInput.pop();
+  }
   if (loadedCamera && capture) makeSegmentationImage();
 }
 
 function makeSegmentationImage() {
-  if (segmentation) {
-    console.log("segmentation", segmentation);
-    image(segmentation.mask, 0, 0, width, height);
+  background(255, 100, 100);
+  if (segmentation && segmentationInput && maskedOutput) {
+    const maskCanvas = segmentation?.mask?.canvas;
+    if (!maskCanvas) return;
+
+    const mctx = maskedOutput.drawingContext;
+    maskedOutput.clear();
+    mctx.drawImage(
+      segmentationInput.canvas,
+      0,
+      0,
+      maskedOutput.width,
+      maskedOutput.height,
+    );
+    mctx.globalCompositeOperation = "destination-in";
+    mctx.drawImage(maskCanvas, 0, 0, maskedOutput.width, maskedOutput.height);
+    mctx.globalCompositeOperation = "source-over";
+
+    image(maskedOutput, 0, 0);
   }
-
-  // Draw video, mirrored for front camera
-  // push();
-  // if (isFrontCamera) {
-  //   translate(width, 0);
-  //   scale(-1, 1);
-  // }
-  // image(capture, 0, 0, width, height);
-  // pop();
-
-  // if (!segmentation) return;
-
-  // const maskSrc = segmentation.mask.canvas;
-  // if (!maskSrc) return;
-
-  // const isPortrait = height > width;
-
-  // const offscreen = document.createElement("canvas");
-  // offscreen.width = width;
-  // offscreen.height = height;
-  // const octx = offscreen.getContext("2d");
-
-  // const mw = maskSrc.width;
-  // const mh = maskSrc.height;
-
-  // Mirror the mask horizontally to match the mirrored video feed.
-  // No rotation needed — ml5 SelfieSegmentation outputs the mask
-  // correctly oriented when capture.size() matches the camera dimensions.
-  // octx.translate(width / 2, height / 2);
-  // octx.scale(-1, 1);
-  // octx.drawImage(maskSrc, -mw / 2, -mh / 2, mw, mh);
-
-  // drawingContext.globalCompositeOperation = "destination-in";
-  // drawingContext.drawImage(offscreen, 0, 0);
-  // drawingContext.globalCompositeOperation = "source-over";
-
-  // let newImg = createImage(width, height);
-
-  // // copy image into the new image
-  // // https://p5js.org/reference/#/p5.Image/copy
-  // newImg.copy(drawingContext, 0, 0, width, height, 0, 0, width, height);
-
-  // // apply the mask
-  // newImg.mask(maskLayer);
-
-  // image(offscreen)
 }
 
 function captureWebcam() {
@@ -128,10 +112,15 @@ function setCameraDimensions() {
       // Resize canvas to match camera exactly — transforms and mask alignment
       // are all relative to the camera's native dimensions, not the window.
       // CSS in style.css scales the canvas element to fill the window.
-      resizeCanvas(camWidth, camHeight);
+      // resizeCanvas(camWidth, camHeight);
+      segmentationInput = createGraphics(camHeight, camWidth);
+      segmentationInput.pixelDensity(1);
+      segmentationInput.imageMode(CENTER);
+      maskedOutput = createGraphics(camHeight, camWidth);
+      maskedOutput.pixelDensity(1);
       // Start detection only once actual camera dims are known,
       // so ml5 never processes the default 640x480 placeholder frames.
-      bodySegmentation.detectStart(capture, gotResults);
+      bodySegmentation.detectStart(segmentationInput.canvas, gotResults);
       loadedCamera = true;
     }
   }, 50);
