@@ -132,10 +132,20 @@ function setCameraDimensions() {
       maskedOutput = createGraphics(camWidth, camHeight);
       maskedOutput.pixelDensity(1);
       maskOutlineHelper = createMaskOutlineHelper({
+        // Lower = finer contour detail, higher CPU cost.
+        // Increase for better fingers/hands, decrease for performance.
         downsample: 4,
+        // Mask cutoff (0-255). Higher = tighter/smaller mask, lower = fuller mask.
         threshold: 127,
+        // Outline stroke thickness in pixels.
         weight: 5,
+        // Outline stroke color.
         color: "#00e5ff",
+        // 0.0-0.95 smoothing blend. Higher = steadier but more lag.
+        temporalSmoothing: 0.35,
+        // Number of contour samples used for smoothing/alignment.
+        // Higher = smoother/cleaner path, slightly more CPU work.
+        targetPoints: 120,
       });
 
       // Start segmentation from camera frame buffer
