@@ -6,6 +6,8 @@ let camWidth = 0;
 let camHeight = 0;
 let cameraFrameBuffer;
 let maskedOutput;
+let latestMaskContour = null;
+let maskOutlineHelper;
 
 const FIT_MODE = "COVER"; // Options: COVER, CONTAIN, FILL
 
@@ -61,6 +63,19 @@ function draw() {
       mctx.globalCompositeOperation = "destination-in";
       mctx.drawImage(maskCanvas, 0, 0, maskedOutput.width, maskedOutput.height);
       mctx.globalCompositeOperation = "source-over";
+
+      const contour = maskOutlineHelper?.extractLargestMaskContour(
+        maskCanvas,
+        camWidth,
+        camHeight,
+      );
+      if (contour && contour.length > 2) {
+        latestMaskContour = contour;
+      }
+      if (latestMaskContour && latestMaskContour.length > 2) {
+        maskOutlineHelper?.drawSmoothContour(maskedOutput, latestMaskContour);
+      }
+
       outputFrame = maskedOutput;
     }
   }
@@ -116,6 +131,12 @@ function setCameraDimensions() {
       cameraFrameBuffer.pixelDensity(1);
       maskedOutput = createGraphics(camWidth, camHeight);
       maskedOutput.pixelDensity(1);
+      maskOutlineHelper = createMaskOutlineHelper({
+        downsample: 4,
+        threshold: 127,
+        weight: 5,
+        color: "#00e5ff",
+      });
 
       // Start segmentation from camera frame buffer
       bodySegmentation.detectStart(cameraFrameBuffer.canvas, gotResults);
